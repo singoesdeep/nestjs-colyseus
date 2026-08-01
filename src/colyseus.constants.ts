@@ -1,0 +1,3 @@
+export const COLYSEUS_OPTIONS = Symbol('COLYSEUS_OPTIONS');
+export const COLYSEUS_SERVER = Symbol('COLYSEUS_SERVER');
+

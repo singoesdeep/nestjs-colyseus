@@ -1,0 +1,26 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Generated archives and package-manager logs
+*.tgz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local tooling artifacts
+PLAN.md
+.codebase-memory/
+.vscode/
+.idea/
+
+# OS metadata
+.DS_Store
+Thumbs.db
