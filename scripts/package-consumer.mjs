@@ -20,9 +20,9 @@ try {
     cwd: temp,
     stdio: 'inherit',
   });
-  writeFileSync(join(temp, 'consumer.cjs'), "const pkg = require('nestjs-colyseus'); if (!pkg.ColyseusModule) process.exit(1);\n");
+  writeFileSync(join(temp, 'consumer.cjs'), "const pkg = require('nestjs-colyseus'); if (!pkg.ColyseusModule) throw new Error('Missing ColyseusModule export'); if (!pkg.ColyseusHealthIndicator) throw new Error('Missing ColyseusHealthIndicator export');\n");
   execFileSync(process.execPath, ['consumer.cjs'], { cwd: temp, stdio: 'inherit' });
-  writeFileSync(join(temp, 'consumer.mjs'), "import { ColyseusModule } from 'nestjs-colyseus'; if (!ColyseusModule) process.exit(1);\n");
+  writeFileSync(join(temp, 'consumer.mjs'), "import { ColyseusModule, ColyseusHealthIndicator } from 'nestjs-colyseus'; if (!ColyseusModule) throw new Error('Missing ColyseusModule export'); if (!ColyseusHealthIndicator) throw new Error('Missing ColyseusHealthIndicator export');\n");
   execFileSync(process.execPath, ['consumer.mjs'], { cwd: temp, stdio: 'inherit' });
 } finally {
   rmSync(temp, { recursive: true, force: true });
