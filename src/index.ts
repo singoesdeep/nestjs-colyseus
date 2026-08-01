@@ -9,3 +9,4 @@ export * from './colyseus-health.indicator';
 export * from './colyseus.errors';
 export * from './nest-room';
 export * from './colyseus.decorators';
+export * from './colyseus-execution-context';

@@ -1,7 +1,8 @@
 import { Type } from '@nestjs/common';
 import { ContextId, ContextIdFactory, ModuleRef } from '@nestjs/core';
 import { Room } from '@colyseus/core';
-import { getColyseusMessageMetadata } from './colyseus.decorators';
+import { getColyseusMessageMetadata, getRoomGuardMetadata, getRoomPipeMetadata, getRoomInterceptorMetadata, getRoomParameterMetadata } from './colyseus.decorators';
+import { executeColyseusMessage } from './colyseus-message-pipeline';
 
 /**
  * Opt-in bridge for resolving Nest providers from a Colyseus room instance.
@@ -38,8 +39,9 @@ export abstract class NestRoom<
   }
 
   /** @internal */
-  attachNestContext(moduleRef: ModuleRef): void {
+  attachNestContext(moduleRef: ModuleRef, contextId?: ContextId): void {
     this.nestModuleRef = moduleRef;
+    this.nestContextId = contextId;
   }
 }
 
@@ -57,10 +59,14 @@ export function createNestRoomConstructor<TRoom extends Room>(
   if (!nestRoom && messageMetadata.length === 0) return room;
   return class NestAttachedRoom extends (room as any) {
     private colyseusHandlersBound = false;
+    private runtimeContextId?: ContextId;
+    private runtimeResolved = new Map<unknown, Promise<unknown>>();
 
     constructor(...args: any[]) {
       super(...args);
-      if (nestRoom) this.attachNestContext(moduleRef);
+      (this as any).__colyseusRoomConstructor = room;
+      this.runtimeContextId = ContextIdFactory.create();
+      if (nestRoom) this.attachNestContext(moduleRef, this.runtimeContextId);
     }
 
     async onCreate(...args: any[]): Promise<void> {
@@ -69,7 +75,36 @@ export function createNestRoomConstructor<TRoom extends Room>(
         for (const { type, method } of messageMetadata) {
           const handler = (this as any)[method];
           if (typeof handler !== 'function') throw new Error(`Colyseus message handler is not a method: ${String(method)}`);
-          this.onMessage(type as any, handler.bind(this));
+          const pipeline = {
+            guards: getRoomGuardMetadata(room, method),
+            pipes: getRoomPipeMetadata(room, method),
+            interceptors: getRoomInterceptorMetadata(room, method),
+            parameters: getRoomParameterMetadata(room, method),
+          };
+          const payloadParameter = pipeline.parameters.find(parameter => parameter.kind === 'payload');
+          const parameterTypes: Type<unknown>[] = Reflect.getMetadata('design:paramtypes', room.prototype, method) ?? [];
+          const payloadMetatype = payloadParameter?.metatype ?? parameterTypes[1];
+          const hasPipeline = pipeline.guards.length || pipeline.pipes.length || pipeline.interceptors.length || pipeline.parameters.length;
+          const resolver = async (token: unknown) => {
+            if (typeof token !== 'function' && typeof token !== 'string' && typeof token !== 'symbol') return token;
+            let value = this.runtimeResolved.get(token);
+            if (!value) {
+              try { value = Promise.resolve(moduleRef.get(token as any, { strict: false })); }
+              catch { value = moduleRef.resolve(token as any, this.runtimeContextId, { strict: false }); }
+              this.runtimeResolved.set(token, value);
+            }
+            return value;
+          };
+          this.onMessage(type as any, hasPipeline
+            ? (client: unknown, payload: unknown) => executeColyseusMessage(
+              this,
+              handler,
+              type,
+              [client, payload],
+              { ...pipeline, payloadMetatype },
+              resolver,
+            )
+            : handler.bind(this));
         }
       }
       await super.onCreate?.(...args);
@@ -80,6 +115,8 @@ export function createNestRoomConstructor<TRoom extends Room>(
         await super.onDispose?.(...args);
       } finally {
         if (nestRoom) this.releaseNestContext();
+        this.runtimeContextId = undefined;
+        this.runtimeResolved.clear();
       }
     }
   } as unknown as new (...args: any[]) => TRoom;

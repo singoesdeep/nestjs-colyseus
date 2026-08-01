@@ -1,9 +1,23 @@
 import 'reflect-metadata';
-import { Module } from '@nestjs/common';
+import { Injectable, Module, type ArgumentMetadata, type CallHandler, type ExecutionContext, type NestInterceptor, type PipeTransform } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { matchMaker, Room } from '@colyseus/core';
+import { matchMaker, Room, type Client as ServerClient } from '@colyseus/core';
 import { Client } from 'colyseus.js';
-import { ColyseusModule, ColyseusService, OnRoomMessage } from '../src';
+import { tap, type Observable } from 'rxjs';
+import {
+  ColyseusExecutionContext,
+  ColyseusModule,
+  ColyseusService,
+  OnRoomMessage,
+  RoomClient,
+  RoomContext,
+  RoomInstance,
+  RoomMessageType,
+  RoomPayload,
+  UseRoomGuards,
+  UseRoomInterceptors,
+  UseRoomPipes,
+} from '../src';
 import { TestRoom } from './fixtures/test-room';
 
 describe('ColyseusModule', () => {
@@ -75,9 +89,64 @@ describe('ColyseusModule', () => {
   });
 
   it('accepts a real client, exchanges a message, and cleans up in standalone mode', async () => {
+    const events: string[] = [];
+
+    @Injectable()
+    class EchoGuard {
+      canActivate(context: ExecutionContext): boolean {
+        events.push('guard');
+        return context.getType() === 'ws' && context.switchToWs().getPattern() === 'echo';
+      }
+    }
+
+    @Injectable()
+    class GlobalPayloadPipe implements PipeTransform {
+      static metadata?: ArgumentMetadata;
+
+      transform(value: string, metadata: ArgumentMetadata): string {
+        events.push('global-pipe');
+        GlobalPayloadPipe.metadata = metadata;
+        return `${value}:global`;
+      }
+    }
+
+    @Injectable()
+    class LocalPayloadPipe implements PipeTransform {
+      transform(value: string): string {
+        events.push('local-pipe');
+        return `${value}:local`;
+      }
+    }
+
+    @Injectable()
+    class EchoInterceptor implements NestInterceptor {
+      async intercept(_context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+        events.push('interceptor-before');
+        return next.handle().pipe(tap(() => events.push('interceptor-after')));
+      }
+    }
+
+    @UseRoomGuards(EchoGuard)
+    @UseRoomPipes(GlobalPayloadPipe)
     class EchoRoom extends Room {
+      static contextVerified = false;
+
       @OnRoomMessage('echo')
-      onEcho(client: { send: (type: string, message: string) => void }, message: string) { client.send('echo', message); }
+      @UseRoomInterceptors(EchoInterceptor)
+      onEcho(
+        @RoomClient() client: ServerClient,
+        @RoomPayload(LocalPayloadPipe) message: string,
+        @RoomMessageType() type: string | number,
+        @RoomInstance() room: EchoRoom,
+        @RoomContext() context: ColyseusExecutionContext,
+      ): void {
+        events.push('handler');
+        EchoRoom.contextVerified = type === 'echo'
+          && room === this
+          && context.getRoom() === this
+          && context.getData() === 'hello:global';
+        client.send('echo', message);
+      }
     }
 
     @Module({
@@ -89,6 +158,7 @@ describe('ColyseusModule', () => {
           rooms: { echo: EchoRoom },
         }),
       ],
+      providers: [EchoGuard, GlobalPayloadPipe, LocalPayloadPipe, EchoInterceptor],
     })
     class AppModule {}
 
@@ -104,7 +174,17 @@ describe('ColyseusModule', () => {
       room = await client.joinOrCreate('echo');
       const received = new Promise<string>((resolve) => room!.onMessage('echo', resolve));
       room.send('echo', 'hello');
-      await expect(received).resolves.toBe('hello');
+      await expect(received).resolves.toBe('hello:global:local');
+      expect(EchoRoom.contextVerified).toBe(true);
+      expect(GlobalPayloadPipe.metadata).toMatchObject({ type: 'custom', data: 'payload', metatype: String });
+      expect(events).toEqual([
+        'guard',
+        'global-pipe',
+        'local-pipe',
+        'interceptor-before',
+        'handler',
+        'interceptor-after',
+      ]);
     } finally {
       await room?.leave();
       await app.close();

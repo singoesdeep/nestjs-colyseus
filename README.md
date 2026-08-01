@@ -157,6 +157,65 @@ Regular `Room` classes continue to work unchanged. The context is released
 when Colyseus disposes the room. Keep this bridge opt-in and avoid storing
 room-scoped providers globally.
 
+### Nest-native message pipeline
+
+Decorated message handlers can use Nest-style guards, pipes, and interceptors
+without replacing Colyseus' room API. Enhancers may be provider classes/tokens
+or already-created instances. Class-based enhancers are resolved through Nest;
+scoped providers resolved for a room share that room's `ContextId`.
+
+```ts
+import { Client } from '@colyseus/core';
+import {
+  ColyseusExecutionContext,
+  NestRoom,
+  OnRoomMessage,
+  RoomClient,
+  RoomContext,
+  RoomInstance,
+  RoomMessageType,
+  RoomPayload,
+  UseRoomGuards,
+  UseRoomInterceptors,
+  UseRoomPipes,
+} from 'nestjs-colyseus';
+
+@UseRoomGuards(AuthGuard)
+@UseRoomPipes(TrimPayloadPipe)
+@UseRoomInterceptors(LoggingInterceptor)
+export class ChatRoom extends NestRoom {
+  @OnRoomMessage('chat')
+  @UseRoomGuards(ChatGuard)
+  async onChat(
+    @RoomClient() client: Client,
+    @RoomPayload(ParseChatPipe) payload: ChatPayload,
+    @RoomInstance() room: ChatRoom,
+    @RoomMessageType() type: string,
+    @RoomContext() context: ColyseusExecutionContext,
+  ) {
+    const data = context.switchToWs().getData<ChatPayload>();
+    const currentRoom = context.getRoom<ChatRoom>();
+    client.send(type, { ...data, room: currentRoom === room });
+  }
+}
+
+@Module({
+  imports: [ColyseusModule.forFeature({ rooms: { chat: ChatRoom } })],
+  providers: [AuthGuard, ChatGuard, TrimPayloadPipe, ParseChatPipe, LoggingInterceptor],
+})
+export class ChatModule {}
+```
+
+For each message, execution runs in this order: guards → class/method pipes →
+parameter pipes (such as the local `ParseChatPipe`) → interceptor chain →
+handler. `ColyseusExecutionContext` reports `getType() === 'ws'` and exposes
+`switchToWs().getClient()`, `switchToWs().getData()`, `getRoom()`, and
+`getData()` for transport-agnostic Nest code.
+
+Nest exceptions are not converted into HTTP responses. A denied guard throws
+`ForbiddenException`; handle or translate message errors in a room interceptor
+when the client needs a protocol-specific error message.
+
 ## 3. Async configuration
 
 Use `forRootAsync()` when options come from `ConfigService`, a secret manager,

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Added Nest-compatible room guards, pipes, and interceptors.
+- Added `ColyseusExecutionContext` with WebSocket and room accessors.
+- Added client, payload, room, message-type, and context parameter decorators.
+- Added class, method, and parameter-level enhancer metadata with Nest DI resolution.
+- Added DTO metatype forwarding for validation and transformation pipes.
+- Added real-client coverage for the complete message pipeline.
+
 ## 0.2.1
 
 - Fixed duplicate `forRoot()` detection on NestJS 10.
