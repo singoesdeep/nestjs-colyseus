@@ -69,7 +69,7 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
           ? createNestRoomConstructor(definition.room, this.moduleRef)
           : definition.room;
         const handler = server.define(name, roomConstructor, definition.defaultOptions);
-        if (definition.filterBy) handler.filterBy(definition.filterBy);
+        if (definition.filterBy?.length) handler.filterBy(definition.filterBy);
         if (definition.sortBy) handler.sortBy(definition.sortBy);
         if (definition.realtimeListing || definition.enableRealtimeListing) handler.enableRealtimeListing();
       }
