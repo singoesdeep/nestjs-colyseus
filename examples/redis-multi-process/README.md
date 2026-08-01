@@ -23,8 +23,8 @@ ColyseusModule.forRoot({
   mode: 'standalone',
   port: Number(process.env.COLYSEUS_PORT ?? 2567),
   publicAddress: process.env.PUBLIC_ADDRESS,
-  presence: new RedisPresence({ url: process.env.REDIS_URL }),
-  driver: new RedisDriver({ url: process.env.REDIS_URL }),
+  presence: new RedisPresence(process.env.REDIS_URL),
+  driver: new RedisDriver(process.env.REDIS_URL),
   rooms: { battle: BattleRoom },
 });
 ```

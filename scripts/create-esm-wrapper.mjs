@@ -8,6 +8,7 @@ writeFileSync(
 export const ColyseusModule = pkg.ColyseusModule;
 export const ColyseusService = pkg.ColyseusService;
 export const ColyseusHealthService = pkg.ColyseusHealthService;
+export const ColyseusHealthIndicator = pkg.ColyseusHealthIndicator;
 export const ColyseusRoomRegistry = pkg.ColyseusRoomRegistry;
 export const ConfigurableModuleClass = pkg.ConfigurableModuleClass;
 export const MODULE_OPTIONS_TOKEN = pkg.MODULE_OPTIONS_TOKEN;

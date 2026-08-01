@@ -5,4 +5,6 @@ export * from './colyseus.module-definition';
 export * from './room-registry';
 export * from './colyseus.constants';
 export * from './colyseus-health.service';
+export * from './colyseus-health.indicator';
 export * from './colyseus.errors';
+export * from './nest-room';

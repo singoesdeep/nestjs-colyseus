@@ -4,6 +4,7 @@ import { ColyseusService } from './colyseus.service';
 import { ColyseusRoomRegistry } from './room-registry';
 import type { ColyseusModuleOptions } from './colyseus-options';
 import { ColyseusHealthService } from './colyseus-health.service';
+import { ColyseusHealthIndicator } from './colyseus-health.indicator';
 
 const FEATURE_OPTIONS = Symbol('COLYSEUS_FEATURE_OPTIONS');
 
@@ -20,7 +21,7 @@ class ColyseusFeatureRegistrar implements OnModuleInit {
 }
 
 @Global()
-@Module({ providers: [ColyseusRoomRegistry, ColyseusService, ColyseusHealthService], exports: [ColyseusService, ColyseusRoomRegistry, ColyseusHealthService] })
+@Module({ providers: [ColyseusRoomRegistry, ColyseusService, ColyseusHealthService, ColyseusHealthIndicator], exports: [ColyseusService, ColyseusRoomRegistry, ColyseusHealthService, ColyseusHealthIndicator] })
 export class ColyseusModule extends ConfigurableModuleClass {
   static forFeature(options: Pick<ColyseusModuleOptions, 'rooms'>): DynamicModule {
     @Module({})

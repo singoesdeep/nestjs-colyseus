@@ -52,6 +52,10 @@ export class ColyseusHealthService {
   }
 
   async metrics(): Promise<ColyseusMetricsSnapshot> {
+    return this.snapshot();
+  }
+
+  async snapshot(): Promise<ColyseusMetricsSnapshot> {
     const stats = this.readStats();
     return { roomCount: stats.roomCount, ccu: stats.ccu, statsAvailable: stats.available, registeredRooms: this.registry.size, capturedAt: new Date().toISOString() };
   }

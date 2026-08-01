@@ -94,6 +94,28 @@ ColyseusModule.forFeature({
 });
 ```
 
+### Resolving Nest providers from rooms (opt-in)
+
+Colyseus creates room instances, so constructor injection is not available by
+default. Extend `NestRoom` and resolve providers from `onCreate` or handlers;
+each room receives its own Nest context:
+
+```ts
+import { NestRoom } from 'nestjs-colyseus';
+import { CharacterService } from '../character.service';
+
+export class WorldRoom extends NestRoom {
+  async onCreate() {
+    const characters = await this.resolve(CharacterService);
+    // use characters in handlers/onCreate
+  }
+}
+```
+
+Regular `Room` classes continue to work unchanged. The context is released
+when Colyseus disposes the room. Keep this bridge opt-in and avoid storing
+room-scoped providers globally.
+
 ## 3. Async configuration
 
 Use `forRootAsync()` when options come from `ConfigService`, a secret manager,
@@ -146,8 +168,8 @@ ColyseusModule.forRoot({
   mode: 'standalone',
   port: Number(process.env.COLYSEUS_PORT ?? 2567),
   publicAddress: process.env.PUBLIC_ADDRESS,
-  presence: new RedisPresence({ url: redis }),
-  driver: new RedisDriver({ url: redis }),
+  presence: new RedisPresence(redis),
+  driver: new RedisDriver(redis),
   rooms: { battle: BattleRoom },
 });
 ```
@@ -172,8 +194,8 @@ ColyseusModule.forRoot({
   mode: 'standalone',
   isStandaloneMatchMaker: true,
   port: Number(process.env.MATCHMAKER_PORT ?? 2567),
-  presence: new RedisPresence({ url: process.env.REDIS_URL }),
-  driver: new RedisDriver({ url: process.env.REDIS_URL }),
+  presence: new RedisPresence(process.env.REDIS_URL),
+  driver: new RedisDriver(process.env.REDIS_URL),
   rooms: { battle: BattleRoom },
 });
 ```
@@ -187,6 +209,7 @@ See the runnable examples:
 - [Standalone server](examples/standalone/README.md)
 - [Redis multi-process](examples/redis-multi-process/README.md)
 - [Standalone matchmaker](examples/standalone-matchmaker/README.md)
+- [Deployment guide](docs/deployment.md)
 
 ## 7. Health and metrics
 
@@ -204,13 +227,45 @@ export class HealthController {
 
   @Get('colyseus/metrics')
   metrics() {
-    return this.colyseus.metrics();
+    return this.colyseus.snapshot();
   }
 }
 ```
 
 `check()` returns readiness, draining state, registered rooms, active rooms,
 and CCU. Map readiness to traffic routing and liveness to process monitoring.
+`snapshot()` is the local process metrics snapshot; `metrics()` remains as a
+backwards-compatible alias.
+
+### Optional Terminus integration
+
+The package does not require `@nestjs/terminus`, but it exports a compatible
+indicator when Terminus is already part of your application:
+
+```ts
+import { HealthCheck, HealthCheckService } from '@nestjs/terminus';
+import { ColyseusHealthIndicator } from 'nestjs-colyseus';
+
+@Controller('health')
+export class HealthController {
+  constructor(
+    private readonly checks: HealthCheckService,
+    private readonly colyseus: ColyseusHealthIndicator,
+  ) {}
+
+  @Get()
+  @HealthCheck()
+  check() {
+    return this.checks.check([
+      () => this.colyseus.isHealthy('colyseus'),
+    ]);
+  }
+}
+```
+
+`ColyseusHealthIndicator` returns the standard `{ [key]: { status, data } }`
+shape and maps `ok` to `up`; not-ready, degraded, and draining states map to
+`down`.
 
 ## 8. Production shutdown and proxy notes
 
@@ -241,6 +296,9 @@ npm run pack:check
 
 The package publishes only `dist`, `README.md`, and `LICENSE`. Redis adapters
 and other peer dependencies are installed by the consuming application.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and
+[CHANGELOG.md](CHANGELOG.md) for project policies and release history.
 
 ## License
 

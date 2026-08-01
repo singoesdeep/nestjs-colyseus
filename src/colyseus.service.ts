@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
-import { HttpAdapterHost } from '@nestjs/core';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, Optional } from '@nestjs/common';
+import { HttpAdapterHost, ModuleRef } from '@nestjs/core';
 import { createServer, type Server as HttpServer } from 'node:http';
 import { Server as ColyseusCoreServer } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
@@ -7,6 +7,7 @@ import { MODULE_OPTIONS_TOKEN } from './colyseus.module-definition';
 import type { ColyseusModuleOptions, ColyseusServer } from './colyseus-options';
 import { ColyseusRoomRegistry } from './room-registry';
 import { ColyseusConfigurationError, ColyseusShutdownError, ColyseusStartupError } from './colyseus.errors';
+import { createNestRoomConstructor } from './nest-room';
 
 @Injectable()
 export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -24,6 +25,7 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
     @Inject(MODULE_OPTIONS_TOKEN) private readonly options: ColyseusModuleOptions,
     private readonly registry: ColyseusRoomRegistry,
     private readonly adapterHost: HttpAdapterHost,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   get server(): ColyseusServer {
@@ -63,7 +65,10 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
       for (const [name, definition] of Object.entries(this.registry.entries())) {
         const server: any = this.instance;
         if (typeof server.define !== 'function') throw new ColyseusConfigurationError('Installed Colyseus core does not support room registration');
-        const handler = server.define(name, definition.room, definition.defaultOptions);
+        const roomConstructor = this.moduleRef
+          ? createNestRoomConstructor(definition.room, this.moduleRef)
+          : definition.room;
+        const handler = server.define(name, roomConstructor, definition.defaultOptions);
         if (definition.filterBy) handler.filterBy(definition.filterBy);
         if (definition.sortBy) handler.sortBy(definition.sortBy);
         if (definition.realtimeListing || definition.enableRealtimeListing) handler.enableRealtimeListing();
