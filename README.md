@@ -77,6 +77,23 @@ export class BattleModule {}
 Call `forRoot()` once in the application. Import feature modules from the root
 module. Duplicate room names fail during startup.
 
+Room descriptors can provide Colyseus matchmaking options while direct room
+constructors remain supported:
+
+```ts
+ColyseusModule.forFeature({
+  rooms: {
+    world: {
+      room: WorldRoom,
+      defaultOptions: { mapId: 'main-world' },
+      filterBy: ['region', 'channel'],
+      sortBy: { clients: 1 },
+      realtimeListing: true,
+    },
+  },
+});
+```
+
 ## 3. Async configuration
 
 Use `forRootAsync()` when options come from `ConfigService`, a secret manager,
@@ -208,7 +225,7 @@ and CCU. Map readiness to traffic routing and liveness to process monitoring.
 
 - Node.js 18.18+
 - NestJS 10 or 11
-- Colyseus 0.16+
+- Colyseus 0.16.x (0.17 compatibility is not declared yet)
 - Express and Fastify NestJS HTTP adapters
 
 ## Development and release checks

@@ -1,10 +1,29 @@
-import type { Server } from '@colyseus/core';
+import type { Room, Server } from '@colyseus/core';
 import type { Server as HttpServer } from 'node:http';
 
 export type ColyseusMode = 'embedded' | 'standalone';
 
+export type ColyseusRoomConstructor<TRoom extends Room = Room> = new (...args: any[]) => TRoom;
+export type ColyseusSortOptions = Record<string, 1 | -1>;
+
+/** Explicit room registration options. A constructor alone remains supported. */
+export interface ColyseusRoomDefinition<TRoom extends Room = Room> {
+  room: ColyseusRoomConstructor<TRoom>;
+  defaultOptions?: Record<string, unknown>;
+  filterBy?: string[];
+  sortBy?: ColyseusSortOptions;
+  /** Enable Colyseus realtime room listing for this room type. */
+  realtimeListing?: boolean;
+  /** Alias for realtimeListing, matching Colyseus' handler method name. */
+  enableRealtimeListing?: boolean;
+}
+
+export type ColyseusRoomRegistration =
+  | ColyseusRoomConstructor
+  | ColyseusRoomDefinition;
+
 export interface ColyseusModuleOptions {
-  rooms?: Record<string, unknown>;
+  rooms?: Record<string, ColyseusRoomRegistration>;
   mode?: ColyseusMode;
   port?: number;
   host?: string;
@@ -28,4 +47,3 @@ export interface ColyseusOptionsFactory {
 }
 
 export type ColyseusServer = Server;
-

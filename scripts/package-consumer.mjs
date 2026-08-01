@@ -22,6 +22,8 @@ try {
   });
   writeFileSync(join(temp, 'consumer.cjs'), "const pkg = require('nestjs-colyseus'); if (!pkg.ColyseusModule) process.exit(1);\n");
   execFileSync(process.execPath, ['consumer.cjs'], { cwd: temp, stdio: 'inherit' });
+  writeFileSync(join(temp, 'consumer.mjs'), "import { ColyseusModule } from 'nestjs-colyseus'; if (!ColyseusModule) process.exit(1);\n");
+  execFileSync(process.execPath, ['consumer.mjs'], { cwd: temp, stdio: 'inherit' });
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }

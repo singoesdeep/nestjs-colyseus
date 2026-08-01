@@ -1,6 +1,6 @@
 {
   "name": "nestjs-colyseus",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Production-ready Colyseus integration for NestJS",
   "license": "MIT",
   "repository": {
@@ -12,7 +12,7 @@
     "url": "https://github.com/singoesdeep/nestjs-colyseus/issues"
   },
   "main": "./dist/index.js",
-  "module": "./dist/esm/index.js",
+  "module": "./dist/esm/index.mjs",
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
@@ -22,16 +22,16 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/esm/index.js",
+      "import": "./dist/esm/index.mjs",
       "require": "./dist/index.js",
-      "default": "./dist/esm/index.js"
+      "default": "./dist/esm/index.mjs"
     }
   },
   "engines": {
     "node": ">=18.18"
   },
   "scripts": {
-    "build": "npm run clean && tsc -p tsconfig.build.json && tsc -p tsconfig.esm.json",
+    "build": "npm run clean && tsc -p tsconfig.build.json && tsc -p tsconfig.esm.json && node scripts/create-esm-wrapper.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest --config test/jest.config.cjs --runInBand",
@@ -41,8 +41,8 @@
     "package:consumer": "node scripts/package-consumer.mjs"
   },
   "peerDependencies": {
-    "@colyseus/core": ">=0.16 <1",
-    "@colyseus/ws-transport": ">=0.16 <1",
+    "@colyseus/core": ">=0.16 <0.17",
+    "@colyseus/ws-transport": ">=0.16 <0.17",
     "@nestjs/common": "^10.0.0 || ^11.0.0",
     "@nestjs/core": "^10.0.0 || ^11.0.0"
   },

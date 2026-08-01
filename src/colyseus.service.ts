@@ -6,7 +6,7 @@ import { WebSocketTransport } from '@colyseus/ws-transport';
 import { MODULE_OPTIONS_TOKEN } from './colyseus.module-definition';
 import type { ColyseusModuleOptions, ColyseusServer } from './colyseus-options';
 import { ColyseusRoomRegistry } from './room-registry';
-import { ColyseusConfigurationError, ColyseusShutdownError } from './colyseus.errors';
+import { ColyseusConfigurationError, ColyseusShutdownError, ColyseusStartupError } from './colyseus.errors';
 
 @Injectable()
 export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -32,45 +32,72 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   async onApplicationBootstrap(): Promise<void> {
+    await this.start();
+  }
+
+  async start(): Promise<void> {
     if (this.started) return;
-    const mode = this.options.mode ?? 'embedded';
-    if (mode !== 'embedded' && mode !== 'standalone') throw new ColyseusConfigurationError(`Unsupported Colyseus mode: ${mode}`);
-    this.registry.addAll(this.options.rooms);
-    this.registry.freeze();
+    const previousRooms = this.registry.entries();
+    let mode = this.options.mode ?? 'embedded';
+    try {
+      if (mode !== 'embedded' && mode !== 'standalone') {
+        throw new ColyseusConfigurationError(`Unsupported Colyseus mode: ${mode}`);
+      }
+      if (mode === 'standalone' && this.options.port === undefined && !this.options.httpServer && !this.options.transport) {
+        throw new ColyseusConfigurationError('Standalone mode requires port, httpServer, or transport');
+      }
 
-    let httpServer = this.options.httpServer;
-    if (mode === 'embedded') {
-      httpServer ??= this.adapterHost.httpAdapter?.getHttpServer?.();
-      if (!httpServer) throw new ColyseusConfigurationError('Embedded Colyseus mode requires a Nest HTTP server');
-    } else if (!httpServer) {
-      httpServer = createServer();
-      this.ownedHttpServer = httpServer;
-    }
+      this.registry.addAll(this.options.rooms);
+      let httpServer = this.options.httpServer;
+      if (mode === 'embedded') {
+        httpServer ??= this.adapterHost.httpAdapter?.getHttpServer?.();
+        if (!httpServer) throw new ColyseusConfigurationError('Embedded Colyseus mode requires a Nest HTTP server');
+      } else if (!httpServer) {
+        httpServer = createServer();
+        this.ownedHttpServer = httpServer;
+      }
 
-    const transport = this.options.transport ?? new WebSocketTransport({ server: httpServer });
-    const { mode: _mode, port: _port, host: _host, httpServer: _http, transport: _transport, rooms: _rooms, ...serverOptions } = this.options;
-    this.instance = new ColyseusCoreServer({ gracefullyShutdown: false, ...serverOptions, transport } as any) as ColyseusServer;
-    for (const [name, definition] of Object.entries(this.registry.entries())) {
-      const server: any = this.instance;
-      if (typeof server.define !== 'function') throw new Error('Installed Colyseus core does not support room registration');
-      server.define(name, definition as any);
-    }
+      const transport = this.options.transport ?? new WebSocketTransport({ server: httpServer });
+      const { mode: _mode, port: _port, host: _host, httpServer: _http, transport: _transport, rooms: _rooms, ...serverOptions } = this.options;
+      this.instance = new ColyseusCoreServer({ gracefullyShutdown: false, ...serverOptions, transport } as any) as ColyseusServer;
+      for (const [name, definition] of Object.entries(this.registry.entries())) {
+        const server: any = this.instance;
+        if (typeof server.define !== 'function') throw new ColyseusConfigurationError('Installed Colyseus core does not support room registration');
+        const handler = server.define(name, definition.room, definition.defaultOptions);
+        if (definition.filterBy) handler.filterBy(definition.filterBy);
+        if (definition.sortBy) handler.sortBy(definition.sortBy);
+        if (definition.realtimeListing || definition.enableRealtimeListing) handler.enableRealtimeListing();
+      }
 
-    if (mode === 'standalone' && this.options.port !== undefined) {
-      await this.instance.listen(this.options.port, this.options.host);
+      if (mode === 'standalone' && this.options.port !== undefined) {
+        await this.instance.listen(this.options.port, this.options.host);
+      }
+      this.registry.freeze();
+      this.started = true;
+      this.logger.log(`Colyseus server started (${mode}) with ${this.registry.size} room(s)`);
+    } catch (cause) {
+      try {
+        await this.cleanupInstance();
+      } catch (cleanupError) {
+        this.logger.error('Colyseus startup rollback failed', cleanupError);
+      }
+      this.registry.restore(previousRooms);
+      throw cause instanceof ColyseusStartupError ? cause : new ColyseusStartupError('Colyseus server startup failed', { cause });
     }
-    this.started = true;
-    this.logger.log(`Colyseus server started (${mode}) with ${this.registry.size} room(s)`);
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (!this.started || this.stopping) return this.stopping;
+    await this.stop();
+  }
+
+  async stop(): Promise<void> {
+    if (!this.started || this.stopping) {
+      if (this.stopping) await this.stopping;
+      return;
+    }
     this.stopping = (async () => {
       try {
-        const server: any = this.instance;
-        if (server?.gracefullyShutdown) await server.gracefullyShutdown(false);
-        else if (server?.shutdown) await server.shutdown();
-        if (this.ownedHttpServer?.listening) await new Promise<void>((resolve) => this.ownedHttpServer!.close(() => resolve()));
+        await this.cleanupInstance();
       } catch (error) {
         throw error instanceof ColyseusShutdownError ? error : new ColyseusShutdownError('Colyseus server shutdown failed', { cause: error });
       } finally {
@@ -80,6 +107,24 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
         this.stopping = undefined;
       }
     })();
-    return this.stopping;
+    await this.stopping;
+  }
+
+  async drain(): Promise<void> {
+    await this.stop();
+  }
+
+  private async cleanupInstance(): Promise<void> {
+    const server: any = this.instance;
+    try {
+      if (server?.gracefullyShutdown) await server.gracefullyShutdown(false);
+      else if (server?.shutdown) await server.shutdown();
+    } finally {
+      if (this.ownedHttpServer?.listening) {
+        await new Promise<void>((resolve, reject) => this.ownedHttpServer!.close(error => error ? reject(error) : resolve()));
+      }
+      this.instance = undefined;
+      this.ownedHttpServer = undefined;
+    }
   }
 }
