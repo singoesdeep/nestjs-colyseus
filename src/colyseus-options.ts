@@ -1,4 +1,4 @@
-import type { Room, Server } from '@colyseus/core';
+import type { Room, Server, ServerOptions, Transport } from '@colyseus/core';
 import type { Server as HttpServer } from 'node:http';
 
 export type ColyseusMode = 'embedded' | 'standalone';
@@ -24,15 +24,13 @@ export type ColyseusRoomRegistration =
 
 export type ColyseusRoomRegistrations = Record<string, ColyseusRoomRegistration> | ColyseusRoomRegistration[];
 
-export interface ColyseusModuleOptions {
+export interface ColyseusModuleOptions extends Omit<ServerOptions, 'transport'> {
   rooms?: Record<string, ColyseusRoomRegistration>;
   mode?: ColyseusMode;
   port?: number;
   host?: string;
   httpServer?: HttpServer;
-  transport?: unknown;
-  /** Additional options passed to Colyseus defineServer. */
-  [key: string]: unknown;
+  transport?: Transport;
 }
 
 export interface ColyseusModuleAsyncOptions {

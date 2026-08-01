@@ -5,7 +5,7 @@ export class TestState extends Schema {
   @type('string') message = 'ready';
 }
 
-export class TestRoom extends Room<TestState> {
+export class TestRoom extends Room<{ state: TestState }> {
   onCreate() {
     this.setState(new TestState());
   }

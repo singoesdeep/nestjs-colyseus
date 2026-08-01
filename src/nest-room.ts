@@ -1,20 +1,16 @@
 import { Type } from '@nestjs/common';
 import { ContextId, ContextIdFactory, ModuleRef } from '@nestjs/core';
-import { Room } from '@colyseus/core';
-import { getColyseusMessageMetadata, getRoomGuardMetadata, getRoomPipeMetadata, getRoomInterceptorMetadata, getRoomParameterMetadata } from './colyseus.decorators';
-import { executeColyseusMessage } from './colyseus-message-pipeline';
+import { Room, type RoomOptions } from '@colyseus/core';
+import { getColyseusMessageMetadata, getRoomGuardMetadata, getRoomPipeMetadata, getRoomInterceptorMetadata, getRoomParameterMetadata, getRoomFilterMetadata } from './colyseus.decorators';
+import { executeColyseusMessage, handleColyseusException } from './colyseus-message-pipeline';
+import { ColyseusExecutionContext } from './colyseus-execution-context';
 
 /**
  * Opt-in bridge for resolving Nest providers from a Colyseus room instance.
  * Colyseus creates rooms itself, so constructor injection is intentionally not
  * attempted. Resolve providers from onCreate()/handlers instead.
  */
-export abstract class NestRoom<
-  State extends object = any,
-  Metadata = any,
-  UserData = any,
-  AuthData = any,
-> extends Room<State, Metadata, UserData, AuthData> {
+export abstract class NestRoom<T extends RoomOptions = RoomOptions> extends Room<T> {
   private nestModuleRef?: ModuleRef;
   private nestContextId?: ContextId;
   private readonly nestResolved = new Map<unknown, Promise<unknown>>();
@@ -80,11 +76,12 @@ export function createNestRoomConstructor<TRoom extends Room>(
             pipes: getRoomPipeMetadata(room, method),
             interceptors: getRoomInterceptorMetadata(room, method),
             parameters: getRoomParameterMetadata(room, method),
+            filters: getRoomFilterMetadata(room, method),
           };
           const payloadParameter = pipeline.parameters.find(parameter => parameter.kind === 'payload');
           const parameterTypes: Type<unknown>[] = Reflect.getMetadata('design:paramtypes', room.prototype, method) ?? [];
           const payloadMetatype = payloadParameter?.metatype ?? parameterTypes[1];
-          const hasPipeline = pipeline.guards.length || pipeline.pipes.length || pipeline.interceptors.length || pipeline.parameters.length;
+          const hasPipeline = pipeline.guards.length || pipeline.pipes.length || pipeline.interceptors.length || pipeline.parameters.length || pipeline.filters.length;
           const resolver = async (token: unknown) => {
             if (typeof token !== 'function' && typeof token !== 'string' && typeof token !== 'symbol') return token;
             let value = this.runtimeResolved.get(token);
@@ -95,6 +92,7 @@ export function createNestRoomConstructor<TRoom extends Room>(
             }
             return value;
           };
+          const exceptionContext = (client: unknown, payload: unknown) => new ColyseusExecutionContext([client, payload], handler, room, type, this);
           this.onMessage(type as any, hasPipeline
             ? (client: unknown, payload: unknown) => executeColyseusMessage(
               this,
@@ -103,8 +101,8 @@ export function createNestRoomConstructor<TRoom extends Room>(
               [client, payload],
               { ...pipeline, payloadMetatype },
               resolver,
-            )
-            : handler.bind(this));
+            ).catch(error => handleColyseusException(error, new ColyseusExecutionContext([client, payload], handler, room, type, this), client, pipeline.filters, resolver))
+            : (client: unknown, payload: unknown) => Promise.resolve(handler.call(this, client, payload)).catch(error => handleColyseusException(error, exceptionContext(client, payload), client, pipeline.filters, resolver)));
         }
       }
       await super.onCreate?.(...args);

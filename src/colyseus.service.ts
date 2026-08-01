@@ -76,14 +76,12 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
 
       const transport = this.options.transport ?? new WebSocketTransport({ server: httpServer });
       const { mode: _mode, port: _port, host: _host, httpServer: _http, transport: _transport, rooms: _rooms, ...serverOptions } = this.options;
-      this.instance = new ColyseusCoreServer({ gracefullyShutdown: false, ...serverOptions, transport } as any) as ColyseusServer;
+      this.instance = new ColyseusCoreServer({ gracefullyShutdown: false, ...serverOptions, transport });
       for (const [name, definition] of Object.entries(this.registry.entries())) {
-        const server: any = this.instance;
-        if (typeof server.define !== 'function') throw new ColyseusConfigurationError('Installed Colyseus core does not support room registration');
         const roomConstructor = this.moduleRef
           ? createNestRoomConstructor(definition.room, this.moduleRef)
           : definition.room;
-        const handler = server.define(name, roomConstructor, definition.defaultOptions);
+        const handler = this.instance.define(name, roomConstructor, definition.defaultOptions);
         if (definition.filterBy?.length) handler.filterBy(definition.filterBy);
         if (definition.sortBy) handler.sortBy(definition.sortBy);
         if (definition.realtimeListing || definition.enableRealtimeListing) handler.enableRealtimeListing();
@@ -140,10 +138,8 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   private async cleanupInstance(): Promise<void> {
-    const server: any = this.instance;
     try {
-      if (server?.gracefullyShutdown) await server.gracefullyShutdown(false);
-      else if (server?.shutdown) await server.shutdown();
+      await this.instance?.gracefullyShutdown(false);
     } finally {
       if (this.ownedHttpServer?.listening) {
         await new Promise<void>((resolve, reject) => this.ownedHttpServer!.close(error => error ? reject(error) : resolve()));

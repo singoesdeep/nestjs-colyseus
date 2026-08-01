@@ -7,11 +7,14 @@ export const COLYSEUS_GUARDS_METADATA = Symbol('COLYSEUS_GUARDS_METADATA');
 export const COLYSEUS_PIPES_METADATA = Symbol('COLYSEUS_PIPES_METADATA');
 export const COLYSEUS_INTERCEPTORS_METADATA = Symbol('COLYSEUS_INTERCEPTORS_METADATA');
 export const COLYSEUS_PARAMETERS_METADATA = Symbol('COLYSEUS_PARAMETERS_METADATA');
+export const COLYSEUS_FILTERS_METADATA = Symbol('COLYSEUS_FILTERS_METADATA');
 
 export type RoomGuardToken = Type<CanActivate> | CanActivate | string | symbol;
 export type RoomPipeToken = Type<PipeTransform> | PipeTransform | string | symbol;
 export type RoomInterceptorToken = Type<NestInterceptor> | NestInterceptor | string | symbol;
-type RoomEnhancerToken = RoomGuardToken | RoomPipeToken | RoomInterceptorToken;
+export interface RoomExceptionFilter { catch(exception: unknown, context: import('./colyseus-execution-context').ColyseusExecutionContext): unknown; }
+export type RoomFilterToken = Type<RoomExceptionFilter> | RoomExceptionFilter | string | symbol;
+type RoomEnhancerToken = RoomGuardToken | RoomPipeToken | RoomInterceptorToken | RoomFilterToken;
 export type RoomParameterKind = 'client' | 'payload' | 'room' | 'messageType' | 'context';
 export interface RoomParameterMetadata {
   index: number;
@@ -47,6 +50,7 @@ function enhancerDecorator(key: symbol, tokens: RoomEnhancerToken[]): ClassDecor
 export const UseRoomGuards = (...tokens: RoomGuardToken[]) => enhancerDecorator(COLYSEUS_GUARDS_METADATA, tokens);
 export const UseRoomPipes = (...tokens: RoomPipeToken[]) => enhancerDecorator(COLYSEUS_PIPES_METADATA, tokens);
 export const UseRoomInterceptors = (...tokens: RoomInterceptorToken[]) => enhancerDecorator(COLYSEUS_INTERCEPTORS_METADATA, tokens);
+export const UseRoomFilters = (...tokens: RoomFilterToken[]) => enhancerDecorator(COLYSEUS_FILTERS_METADATA, tokens);
 
 function parameterDecorator(kind: RoomParameterKind, pipes: RoomPipeToken[] = []): ParameterDecorator {
   return (target, propertyKey, index) => {
@@ -105,6 +109,9 @@ export function getRoomEnhancerMetadata(
 export const getRoomGuardMetadata = (room: ColyseusRoomConstructor, method?: string | symbol): RoomGuardToken[] => getRoomEnhancerMetadata(room, method).guards;
 export const getRoomPipeMetadata = (room: ColyseusRoomConstructor, method?: string | symbol): RoomPipeToken[] => getRoomEnhancerMetadata(room, method).pipes;
 export const getRoomInterceptorMetadata = (room: ColyseusRoomConstructor, method?: string | symbol): RoomInterceptorToken[] => getRoomEnhancerMetadata(room, method).interceptors;
+export function getRoomFilterMetadata(room: ColyseusRoomConstructor, method?: string | symbol): RoomFilterToken[] {
+  return [...(Reflect.getMetadata(COLYSEUS_FILTERS_METADATA, room) ?? []), ...(method === undefined ? [] : Reflect.getMetadata(COLYSEUS_FILTERS_METADATA, room.prototype, method) ?? [])];
+}
 
 export function getRoomParameterMetadata(room: ColyseusRoomConstructor, method: string | symbol): RoomParameterMetadata[] {
   const types: Type<unknown>[] = Reflect.getMetadata('design:paramtypes', room.prototype, method) ?? [];

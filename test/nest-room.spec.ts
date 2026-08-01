@@ -1,4 +1,5 @@
 import { Room } from '@colyseus/core';
+import { jest } from '@jest/globals';
 import { NestRoom, createNestRoomConstructor } from '../src/nest-room';
 import { OnRoomMessage } from '../src/colyseus.decorators';
 
@@ -16,7 +17,7 @@ describe('NestRoom bridge', () => {
   it('resolves providers through an isolated Nest context', async () => {
     const service = new Service();
     const moduleRef = {
-      resolve: jest.fn().mockResolvedValue(service),
+      resolve: jest.fn<() => Promise<Service>>().mockResolvedValue(service),
     } as any;
     const RoomConstructor = createNestRoomConstructor(TestRoom, moduleRef);
     const room = new RoomConstructor() as TestRoom;

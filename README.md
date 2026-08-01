@@ -212,9 +212,68 @@ handler. `ColyseusExecutionContext` reports `getType() === 'ws'` and exposes
 `switchToWs().getClient()`, `switchToWs().getData()`, `getRoom()`, and
 `getData()` for transport-agnostic Nest code.
 
-Nest exceptions are not converted into HTTP responses. A denied guard throws
-`ForbiddenException`; handle or translate message errors in a room interceptor
-when the client needs a protocol-specific error message.
+Nest exceptions are translated to safe game-protocol payloads. For example,
+`ForbiddenException` becomes `{ code: 'FORBIDDEN', message: 'Forbidden' }` on
+the `error` message channel. Unknown and server errors never expose their
+original message to the client.
+
+### Room exception filters
+
+Use `@UseRoomFilters()` at class level for a room-wide policy and at method
+level for a specific message. Filters implement `catch(exception, context)`;
+they may return a protocol payload or send directly through the client in the
+execution context.
+
+```ts
+import { Injectable, Logger, Module, Scope } from '@nestjs/common';
+import {
+  ColyseusExecutionContext,
+  NestRoom,
+  OnRoomMessage,
+  RoomExceptionFilter,
+  UseRoomFilters,
+} from 'nestjs-colyseus';
+
+@UseRoomFilters(RoomErrorFilter)
+export class ChatRoom extends NestRoom {
+  @OnRoomMessage('chat')
+  onChat(/* decorated parameters */) {
+    // RoomErrorFilter applies to every decorated handler in this room.
+  }
+
+  @OnRoomMessage('moderate')
+  @UseRoomFilters(ModerationErrorFilter)
+  moderate() {}
+}
+
+@Injectable({ scope: Scope.REQUEST })
+export class RoomErrorFilter implements RoomExceptionFilter {
+  private readonly logger = new Logger(RoomErrorFilter.name);
+
+  catch(exception: unknown, context: ColyseusExecutionContext) {
+    this.logger.error('Room message failed', exception instanceof Error ? exception.stack : undefined);
+    return {
+      code: 'ROOM_ERROR',
+      message: 'The action could not be completed',
+    };
+  }
+}
+```
+
+Register class-based filters as Nest providers (or pass a filter instance to
+`@UseRoomFilters()`):
+
+```ts
+@Module({
+  providers: [RoomErrorFilter, ModerationErrorFilter],
+})
+export class ChatModule {}
+```
+
+Scoped filter providers are resolved with the room's Nest `ContextId`, so all
+guards, pipes, interceptors, and filters handling one room share its scoped
+dependencies. Filters run only when a handler or an earlier pipeline enhancer
+throws; normal messages are unaffected.
 
 ## 3. Async configuration
 
@@ -379,9 +438,9 @@ shape and maps `ok` to `up`; not-ready, degraded, and draining states map to
 
 ## Compatibility
 
-- Node.js 18.18+
+- Node.js 20.19+
 - NestJS 10 or 11
-- Colyseus 0.16.x (0.17 compatibility is not declared yet)
+- Colyseus 0.17.x
 - Express and Fastify NestJS HTTP adapters
 
 ## Development and release checks

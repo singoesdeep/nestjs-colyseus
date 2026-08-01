@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import { jest } from '@jest/globals';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { RedisPresence } from '@colyseus/redis-presence';

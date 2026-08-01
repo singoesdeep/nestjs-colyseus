@@ -1,8 +1,8 @@
 import 'reflect-metadata';
-import { Injectable, Module, type ArgumentMetadata, type CallHandler, type ExecutionContext, type NestInterceptor, type PipeTransform } from '@nestjs/common';
+import { ForbiddenException, Injectable, Module, Scope, type ArgumentMetadata, type CallHandler, type ExecutionContext, type NestInterceptor, type PipeTransform } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { matchMaker, Room, type Client as ServerClient } from '@colyseus/core';
-import { Client } from 'colyseus.js';
+import { Client } from '@colyseus/sdk';
 import { tap, type Observable } from 'rxjs';
 import {
   ColyseusExecutionContext,
@@ -16,7 +16,9 @@ import {
   RoomPayload,
   UseRoomGuards,
   UseRoomInterceptors,
+  UseRoomFilters,
   UseRoomPipes,
+  type RoomExceptionFilter,
 } from '../src';
 import { TestRoom } from './fixtures/test-room';
 
@@ -185,6 +187,60 @@ describe('ColyseusModule', () => {
         'handler',
         'interceptor-after',
       ]);
+    } finally {
+      await room?.leave();
+      await app.close();
+    }
+  }, 15_000);
+
+  it('resolves a method-level scoped filter and sends its safe error payload', async () => {
+    @Injectable({ scope: Scope.REQUEST })
+    class ScopedMarker {
+      readonly id = 'scoped';
+    }
+
+    @Injectable({ scope: Scope.REQUEST })
+    class ForbiddenFilter implements RoomExceptionFilter {
+      constructor(private readonly marker: ScopedMarker) {}
+
+      catch(exception: unknown, context: ColyseusExecutionContext) {
+        expect(exception).toBeInstanceOf(ForbiddenException);
+        expect(context.getClient()).toBeDefined();
+        return { code: 'GAME_FORBIDDEN', message: 'Action not allowed', scope: this.marker.id };
+      }
+    }
+
+    const classFilter: RoomExceptionFilter = {
+      catch: () => { throw new Error('Method filter should take precedence'); },
+    };
+
+    @UseRoomFilters(classFilter)
+    class FilterRoom extends Room {
+      @OnRoomMessage('deny')
+      @UseRoomFilters(ForbiddenFilter)
+      deny(): void {
+        throw new ForbiddenException('internal policy detail');
+      }
+    }
+
+    @Module({
+      imports: [ColyseusModule.forRoot({ mode: 'standalone', host: '127.0.0.1', port: 0, rooms: { filters: FilterRoom } })],
+      providers: [ScopedMarker, ForbiddenFilter],
+    })
+    class AppModule {}
+
+    const app = await NestFactory.create(AppModule, { logger: false });
+    let room: Awaited<ReturnType<Client['joinOrCreate']>> | undefined;
+    try {
+      await app.init();
+      const server = app.get(ColyseusService).server;
+      const address = (server.transport.server as import('node:http').Server).address();
+      if (!address || typeof address === 'string') throw new Error('Standalone server did not expose a listening address');
+
+      room = await new Client(`ws://127.0.0.1:${address.port}`).joinOrCreate('filters');
+      const received = new Promise(resolve => room!.onMessage('error', resolve));
+      room.send('deny');
+      await expect(received).resolves.toEqual({ code: 'GAME_FORBIDDEN', message: 'Action not allowed', scope: 'scoped' });
     } finally {
       await room?.leave();
       await app.close();

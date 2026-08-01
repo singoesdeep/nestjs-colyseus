@@ -1,4 +1,5 @@
 import { ForbiddenException, type CanActivate } from '@nestjs/common';
+import { jest } from '@jest/globals';
 import { executeColyseusMessage } from '../src/colyseus-message-pipeline';
 
 describe('Colyseus message pipeline', () => {

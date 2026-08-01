@@ -1,7 +1,7 @@
-import { ForbiddenException, type ArgumentMetadata, type PipeTransform, type Type } from '@nestjs/common';
+import { ForbiddenException, HttpException, HttpStatus, Logger, type ArgumentMetadata, type PipeTransform, type Type } from '@nestjs/common';
 import { defer, isObservable, lastValueFrom, of } from 'rxjs';
 import { ColyseusExecutionContext } from './colyseus-execution-context';
-import type { RoomGuardToken, RoomInterceptorToken, RoomParameterMetadata, RoomPipeToken } from './colyseus.decorators';
+import type { RoomExceptionFilter, RoomFilterToken, RoomGuardToken, RoomInterceptorToken, RoomParameterMetadata, RoomPipeToken } from './colyseus.decorators';
 
 export interface ColyseusMessagePipelineMetadata {
   guards?: RoomGuardToken[];
@@ -9,10 +9,12 @@ export interface ColyseusMessagePipelineMetadata {
   interceptors?: RoomInterceptorToken[];
   parameters?: RoomParameterMetadata[];
   payloadMetatype?: Type<unknown>;
+  filters?: RoomFilterToken[];
 }
 
 type Enhancer<T> = T | Type<T> | string | symbol;
 type EnhancerResolver = (token: unknown) => Promise<unknown>;
+const logger = new Logger('ColyseusRoom');
 
 async function resolveEnhancer<T>(resolver: EnhancerResolver | undefined, enhancer: Enhancer<T>): Promise<T> {
   if (typeof enhancer !== 'function' && typeof enhancer !== 'string' && typeof enhancer !== 'symbol') return enhancer;
@@ -72,4 +74,25 @@ export async function executeColyseusMessage(
     next = { handle: () => defer(async () => { const result = await interceptor.intercept(context, previous); return isObservable(result) ? lastValueFrom(result) : result; }) };
   }
   return lastValueFrom(next.handle());
+}
+
+export async function handleColyseusException(exception: unknown, context: ColyseusExecutionContext, client: any, filters: RoomFilterToken[] = [], resolver?: EnhancerResolver, errorType: string | number = 'error'): Promise<void> {
+  for (const token of [...filters].reverse()) {
+    try {
+      const filter = (typeof token === 'function' || typeof token === 'string' || typeof token === 'symbol')
+        ? await resolveEnhancer<RoomExceptionFilter>(resolver, token)
+        : token;
+      const handled = await filter.catch(exception, context);
+      if (client?.send && handled !== undefined) client.send(errorType, handled);
+      return;
+    } catch (filterError) { logger.error('Room exception filter failed', filterError instanceof Error ? filterError.stack : undefined); }
+  }
+  logger.error('Unhandled Colyseus room exception', exception instanceof Error ? exception.stack : String(exception));
+  const status = exception instanceof HttpException ? exception.getStatus() : 500;
+  const code = status < 500 ? (HttpStatus[status] ?? 'CLIENT_ERROR') : 'INTERNAL_SERVER_ERROR';
+  const message = code === 'INTERNAL_SERVER_ERROR'
+    ? 'Internal server error'
+    : code.toLowerCase().replaceAll('_', ' ').replace(/^./, character => character.toUpperCase());
+  const payload = { code, message };
+  if (client?.send) client.send(errorType, payload);
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0
+
+- Dropped Colyseus 0.16 and migrated the runtime, room generics, SDK tests, Redis adapters, and peer dependencies to Colyseus 0.17.
+- Added `@UseRoomFilters()` at class and method level.
+- Added Nest DI resolution for singleton and scoped room exception filters.
+- Added safe game-protocol error payloads and server-side error logging.
+- Added stable Nest exception mapping, including `ForbiddenException` to `FORBIDDEN`.
+- Added real WebSocket and package consumer coverage on Node.js 20 and 22.
+
 ## 0.3.0
 
 - Added Nest-compatible room guards, pipes, and interceptors.
