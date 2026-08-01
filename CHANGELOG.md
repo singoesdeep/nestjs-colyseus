@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Added `@ColyseusRoom()` and `@OnRoomMessage()` decorators.
+- Added array-based decorated room registration through `forFeature()`.
+- Added explicit server lifecycle states and state-aware health snapshots.
+- Added duplicate root registration protection per Nest container.
+- Added a real standalone WebSocket client integration test.
+- Updated Jest configuration to the current `ts-jest` transform format.
+
 ## 0.1.1
 
 - Added real CommonJS and ESM package consumer checks.

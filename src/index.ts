@@ -8,3 +8,4 @@ export * from './colyseus-health.service';
 export * from './colyseus-health.indicator';
 export * from './colyseus.errors';
 export * from './nest-room';
+export * from './colyseus.decorators';

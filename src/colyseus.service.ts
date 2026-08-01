@@ -9,16 +9,20 @@ import { ColyseusRoomRegistry } from './room-registry';
 import { ColyseusConfigurationError, ColyseusShutdownError, ColyseusStartupError } from './colyseus.errors';
 import { createNestRoomConstructor } from './nest-room';
 
+export type ColyseusServerState = 'idle' | 'starting' | 'ready' | 'draining' | 'stopping' | 'stopped' | 'failed';
+
 @Injectable()
 export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(ColyseusService.name);
   private instance?: ColyseusServer;
   private ownedHttpServer?: HttpServer;
-  private started = false;
+  private stateValue: ColyseusServerState = 'idle';
+  private startPromise?: Promise<void>;
   private stopping?: Promise<void>;
 
-  get isStarted(): boolean { return this.started; }
-  get isStopping(): boolean { return !!this.stopping; }
+  get state(): ColyseusServerState { return this.stateValue; }
+  get isStarted(): boolean { return this.stateValue === 'ready'; }
+  get isStopping(): boolean { return this.stateValue === 'draining' || this.stateValue === 'stopping'; }
   get mode(): string | undefined { return this.options.mode ?? 'embedded'; }
 
   constructor(
@@ -38,7 +42,18 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   async start(): Promise<void> {
-    if (this.started) return;
+    if (this.stateValue === 'ready') return;
+    if (this.stateValue === 'starting' && this.startPromise) return this.startPromise;
+    if (this.stateValue === 'stopped') {
+      throw new ColyseusStartupError('A stopped Colyseus server cannot be restarted; create a new Nest application instance');
+    }
+    if (this.isStopping) throw new ColyseusStartupError('Cannot start while Colyseus server is stopping');
+    this.stateValue = 'starting';
+    this.startPromise = this.startInternal();
+    try { await this.startPromise; } finally { this.startPromise = undefined; }
+  }
+
+  private async startInternal(): Promise<void> {
     const previousRooms = this.registry.entries();
     let mode = this.options.mode ?? 'embedded';
     try {
@@ -78,7 +93,7 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
         await this.instance.listen(this.options.port, this.options.host);
       }
       this.registry.freeze();
-      this.started = true;
+      this.stateValue = 'ready';
       this.logger.log(`Colyseus server started (${mode}) with ${this.registry.size} room(s)`);
     } catch (cause) {
       try {
@@ -87,6 +102,7 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
         this.logger.error('Colyseus startup rollback failed', cleanupError);
       }
       this.registry.restore(previousRooms);
+      this.stateValue = 'failed';
       throw cause instanceof ColyseusStartupError ? cause : new ColyseusStartupError('Colyseus server startup failed', { cause });
     }
   }
@@ -96,17 +112,21 @@ export class ColyseusService implements OnApplicationBootstrap, OnModuleDestroy 
   }
 
   async stop(): Promise<void> {
-    if (!this.started || this.stopping) {
+    if (this.stateValue === 'starting' && this.startPromise) await this.startPromise.catch(() => undefined);
+    if (this.stateValue === 'idle' || this.stateValue === 'stopped' || this.stateValue === 'failed' || this.stopping) {
       if (this.stopping) await this.stopping;
       return;
     }
+    if (this.stateValue === 'ready') this.stateValue = 'draining';
+    this.stateValue = 'stopping';
     this.stopping = (async () => {
       try {
         await this.cleanupInstance();
       } catch (error) {
+        this.stateValue = 'failed';
         throw error instanceof ColyseusShutdownError ? error : new ColyseusShutdownError('Colyseus server shutdown failed', { cause: error });
       } finally {
-        this.started = false;
+        if (this.stateValue !== 'failed') this.stateValue = 'stopped';
         this.instance = undefined;
         this.ownedHttpServer = undefined;
         this.stopping = undefined;

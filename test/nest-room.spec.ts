@@ -1,5 +1,6 @@
 import { Room } from '@colyseus/core';
 import { NestRoom, createNestRoomConstructor } from '../src/nest-room';
+import { OnRoomMessage } from '../src/colyseus.decorators';
 
 class Service {}
 
@@ -28,5 +29,27 @@ describe('NestRoom bridge', () => {
   it('leaves regular Colyseus rooms untouched', () => {
     const moduleRef = { resolve: jest.fn() } as any;
     expect(createNestRoomConstructor(PlainRoom, moduleRef)).toBe(PlainRoom);
+  });
+
+  it('wraps plain Colyseus rooms when message decorators are present', () => {
+    class DecoratedPlainRoom extends Room {
+      @OnRoomMessage('ping') onPing() {}
+    }
+    const moduleRef = { resolve: jest.fn() } as any;
+    expect(createNestRoomConstructor(DecoratedPlainRoom, moduleRef)).not.toBe(DecoratedPlainRoom);
+  });
+
+  it('binds decorated message handlers on room creation', async () => {
+    class MessageRoom extends NestRoom {
+      received?: unknown[];
+      @OnRoomMessage('chat') onChat(client: unknown, payload: unknown) { this.received = [client, payload]; }
+    }
+    const RoomConstructor = createNestRoomConstructor(MessageRoom, {} as any);
+    const room = new RoomConstructor() as MessageRoom;
+    const handlers = new Map<string | number, (client: unknown, payload: unknown) => void>();
+    (room as any).onMessage = (type: string | number, handler: (client: unknown, payload: unknown) => void) => handlers.set(type, handler);
+    await (room as any).onCreate();
+    handlers.get('chat')?.('client', { text: 'hello' });
+    expect(room.received).toEqual(['client', { text: 'hello' }]);
   });
 });

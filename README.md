@@ -75,7 +75,8 @@ export class BattleModule {}
 ```
 
 Call `forRoot()` once in the application. Import feature modules from the root
-module. Duplicate room names fail during startup.
+module. Duplicate root registrations and duplicate room names fail during
+startup.
 
 Room descriptors can provide Colyseus matchmaking options while direct room
 constructors remain supported:
@@ -93,6 +94,46 @@ ColyseusModule.forFeature({
   },
 });
 ```
+
+### Nest-style room and message decorators
+
+Decorated rooms can be registered as an array. `@ColyseusRoom()` supplies the
+room name and matchmaking options, while `@OnRoomMessage()` binds a method to a
+Colyseus message type once when each room is created:
+
+```ts
+import { Client, Room } from '@colyseus/core';
+import {
+  ColyseusModule,
+  ColyseusRoom,
+  OnRoomMessage,
+} from 'nestjs-colyseus';
+
+@ColyseusRoom({
+  name: 'world',
+  filterBy: ['region'],
+  sortBy: { clients: 1 },
+  realtimeListing: true,
+})
+export class WorldRoom extends Room {
+  @OnRoomMessage('chat')
+  onChat(client: Client, message: { text: string }) {
+    client.broadcast('chat', message);
+  }
+}
+
+@Module({
+  imports: [
+    ColyseusModule.forFeature({ rooms: [WorldRoom] }),
+  ],
+})
+export class WorldModule {}
+```
+
+String and numeric message types are supported. Duplicate handlers for the
+same type fail during startup. Regular Colyseus lifecycle methods such as
+`onAuth`, `onJoin`, `onLeave`, and `onDispose` remain unchanged; the package
+does not replace Colyseus game logic.
 
 ### Resolving Nest providers from rooms (opt-in)
 
@@ -232,7 +273,8 @@ export class HealthController {
 }
 ```
 
-`check()` returns readiness, draining state, registered rooms, active rooms,
+`check()` returns the server state (`idle`, `starting`, `ready`, `draining`,
+`stopping`, `stopped`, or `failed`), readiness, registered rooms, active rooms,
 and CCU. Map readiness to traffic routing and liveness to process monitoring.
 `snapshot()` is the local process metrics snapshot; `metrics()` remains as a
 backwards-compatible alias.

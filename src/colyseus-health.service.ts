@@ -5,6 +5,7 @@ import { ColyseusRoomRegistry } from './room-registry';
 
 export type ColyseusHealthStatus = 'ok' | 'degraded' | 'not_ready' | 'draining';
 export interface ColyseusHealthSnapshot {
+  state: ColyseusService['state'];
   status: ColyseusHealthStatus;
   ready: boolean;
   started: boolean;
@@ -36,8 +37,10 @@ export class ColyseusHealthService {
     const stats = this.readStats();
     const started = this.colyseus.isStarted;
     const draining = this.colyseus.isStopping;
+    const state = this.colyseus.state;
     return {
       status: draining ? 'draining' : !started ? 'not_ready' : stats.available ? 'ok' : 'degraded',
+      state,
       ready: started && !draining && stats.available,
       started,
       draining,

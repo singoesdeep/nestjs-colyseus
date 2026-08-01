@@ -1,6 +1,7 @@
 import { Type } from '@nestjs/common';
 import { ContextId, ContextIdFactory, ModuleRef } from '@nestjs/core';
 import { Room } from '@colyseus/core';
+import { getColyseusMessageMetadata } from './colyseus.decorators';
 
 /**
  * Opt-in bridge for resolving Nest providers from a Colyseus room instance.
@@ -51,19 +52,35 @@ export function createNestRoomConstructor<TRoom extends Room>(
   room: new (...args: any[]) => TRoom,
   moduleRef: ModuleRef,
 ): new (...args: any[]) => TRoom {
-  if (!isNestRoomConstructor(room)) return room;
+  const nestRoom = isNestRoomConstructor(room);
+  const messageMetadata = getColyseusMessageMetadata(room);
+  if (!nestRoom && messageMetadata.length === 0) return room;
   return class NestAttachedRoom extends (room as any) {
+    private colyseusHandlersBound = false;
+
     constructor(...args: any[]) {
       super(...args);
-      this.attachNestContext(moduleRef);
+      if (nestRoom) this.attachNestContext(moduleRef);
+    }
+
+    async onCreate(...args: any[]): Promise<void> {
+      if (!this.colyseusHandlersBound) {
+        this.colyseusHandlersBound = true;
+        for (const { type, method } of messageMetadata) {
+          const handler = (this as any)[method];
+          if (typeof handler !== 'function') throw new Error(`Colyseus message handler is not a method: ${String(method)}`);
+          this.onMessage(type as any, handler.bind(this));
+        }
+      }
+      await super.onCreate?.(...args);
     }
 
     async onDispose(...args: any[]): Promise<void> {
       try {
         await super.onDispose?.(...args);
       } finally {
-        this.releaseNestContext();
+        if (nestRoom) this.releaseNestContext();
       }
     }
-  } as new (...args: any[]) => TRoom;
+  } as unknown as new (...args: any[]) => TRoom;
 }

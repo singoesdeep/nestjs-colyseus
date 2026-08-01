@@ -20,9 +20,9 @@ try {
     cwd: temp,
     stdio: 'inherit',
   });
-  writeFileSync(join(temp, 'consumer.cjs'), "const pkg = require('nestjs-colyseus'); if (!pkg.ColyseusModule) throw new Error('Missing ColyseusModule export'); if (!pkg.ColyseusHealthIndicator) throw new Error('Missing ColyseusHealthIndicator export');\n");
+  writeFileSync(join(temp, 'consumer.cjs'), "const pkg = require('nestjs-colyseus'); for (const key of ['ColyseusModule', 'ColyseusHealthIndicator', 'NestRoom', 'ColyseusRoom', 'OnRoomMessage']) if (!pkg[key]) throw new Error('Missing ' + key + ' export');\n");
   execFileSync(process.execPath, ['consumer.cjs'], { cwd: temp, stdio: 'inherit' });
-  writeFileSync(join(temp, 'consumer.mjs'), "import { ColyseusModule, ColyseusHealthIndicator } from 'nestjs-colyseus'; if (!ColyseusModule) throw new Error('Missing ColyseusModule export'); if (!ColyseusHealthIndicator) throw new Error('Missing ColyseusHealthIndicator export');\n");
+  writeFileSync(join(temp, 'consumer.mjs'), "import { ColyseusModule, ColyseusHealthIndicator, NestRoom, ColyseusRoom, OnRoomMessage } from 'nestjs-colyseus'; for (const [key, value] of Object.entries({ ColyseusModule, ColyseusHealthIndicator, NestRoom, ColyseusRoom, OnRoomMessage })) if (!value) throw new Error('Missing ' + key + ' export');\n");
   execFileSync(process.execPath, ['consumer.mjs'], { cwd: temp, stdio: 'inherit' });
 } finally {
   rmSync(temp, { recursive: true, force: true });

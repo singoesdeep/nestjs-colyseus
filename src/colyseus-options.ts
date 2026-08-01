@@ -22,6 +22,8 @@ export type ColyseusRoomRegistration =
   | ColyseusRoomConstructor
   | ColyseusRoomDefinition;
 
+export type ColyseusRoomRegistrations = Record<string, ColyseusRoomRegistration> | ColyseusRoomRegistration[];
+
 export interface ColyseusModuleOptions {
   rooms?: Record<string, ColyseusRoomRegistration>;
   mode?: ColyseusMode;
