@@ -1,4 +1,4 @@
-import { DynamicModule, Global, Inject, Injectable, Module, OnModuleInit } from '@nestjs/common';
+import { DynamicModule, Global, Inject, Injectable, Module, OnModuleInit, Provider } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { ConfigurableModuleClass } from './colyseus.module-definition';
 import { ColyseusService } from './colyseus.service';
@@ -9,16 +9,21 @@ import { ColyseusHealthIndicator } from './colyseus-health.indicator';
 
 const FEATURE_OPTIONS = Symbol('COLYSEUS_FEATURE_OPTIONS');
 const ROOT_CONTAINERS = new WeakSet<object>();
+let rootRegistrationId = 0;
 
-@Injectable()
-class ColyseusRootGuard {
-  constructor(moduleRef: ModuleRef) {
-    const container = (moduleRef as ModuleRef & { container?: object }).container;
-    if (container && ROOT_CONTAINERS.has(container)) {
-      throw new Error('ColyseusModule.forRoot() has already been registered in this Nest container. Use forFeature() for additional rooms.');
-    }
-    if (container) ROOT_CONTAINERS.add(container);
-  }
+function createRootGuardProvider(): Provider {
+  return {
+    provide: `COLYSEUS_ROOT_REGISTRATION_${++rootRegistrationId}`,
+    inject: [ModuleRef],
+    useFactory(moduleRef: ModuleRef): true {
+      const container = (moduleRef as ModuleRef & { container?: object }).container;
+      if (container && ROOT_CONTAINERS.has(container)) {
+        throw new Error('ColyseusModule.forRoot() has already been registered in this Nest container. Use forFeature() for additional rooms.');
+      }
+      if (container) ROOT_CONTAINERS.add(container);
+      return true;
+    },
+  };
 }
 
 @Injectable()
@@ -38,12 +43,12 @@ class ColyseusFeatureRegistrar implements OnModuleInit {
 export class ColyseusModule extends ConfigurableModuleClass {
   static forRoot(options: ColyseusModuleOptions): DynamicModule {
     const dynamic = super.forRoot(options) as DynamicModule;
-    return { ...dynamic, providers: [...(dynamic.providers ?? []), ColyseusRootGuard] };
+    return { ...dynamic, providers: [...(dynamic.providers ?? []), createRootGuardProvider()] };
   }
 
   static forRootAsync(options: ColyseusModuleAsyncOptions): DynamicModule {
     const dynamic = super.forRootAsync(options) as DynamicModule;
-    return { ...dynamic, providers: [...(dynamic.providers ?? []), ColyseusRootGuard] };
+    return { ...dynamic, providers: [...(dynamic.providers ?? []), createRootGuardProvider()] };
   }
 
   static forFeature(options: { rooms: ColyseusRoomRegistrations }): DynamicModule {

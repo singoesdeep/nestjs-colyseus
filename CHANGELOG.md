@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Fixed duplicate `forRoot()` detection on NestJS 10.
+
 ## 0.2.0
 
 - Added `@ColyseusRoom()` and `@OnRoomMessage()` decorators.
